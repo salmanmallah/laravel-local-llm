@@ -130,26 +130,17 @@ class OnlineCareChat {
                     content: message
                 });
 
-                // Add AI response to history (only final answer for history)
+                // Add AI response to history
                 this.conversationHistory.push({
                     role: 'assistant',
                     content: data.response
                 });
 
-                // Remove typing indicator and add thinking process if available
-                if (data.thinking_process) {
-                    // Replace typing with thinking process
-                    this.replaceTypingWithThinking(typingIndicator, data.thinking_process);
-                    
-                    // Wait a moment then show final answer
-                    setTimeout(() => {
-                        this.addMessageToUI('assistant', data.response, data.thinking_process);
-                    }, 1000);
-                } else {
-                    // No thinking process, just show response
-                    typingIndicator.remove();
-                    this.addMessageToUI('assistant', data.response);
-                }
+                // Remove typing indicator
+                typingIndicator.remove();
+
+                // Add AI response to UI
+                this.addMessageToUI('assistant', data.response);
 
                 // Show token usage if available
                 if (data.tokens_used) {
@@ -169,58 +160,7 @@ class OnlineCareChat {
         }
     }
 
-    replaceTypingWithThinking(typingIndicator, thinkingText) {
-        // Create thinking indicator
-        const thinkingDiv = document.createElement('div');
-        thinkingDiv.className = 'message assistant-message thinking-message';
-        thinkingDiv.innerHTML = `
-            <div class="message-avatar ai-avatar">
-                <span>AI</span>
-            </div>
-            <div class="message-content thinking-content">
-                <div class="thinking-header">
-                    <span class="thinking-label">Thinking...</span>
-                    <div class="thinking-spinner">
-                        <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
-                    </div>
-                </div>
-                <div class="thinking-text" style="display: none;">
-                    ${this.formatMessage(thinkingText)}
-                </div>
-            </div>
-        `;
-        
-        // Replace typing indicator
-        typingIndicator.replaceWith(thinkingDiv);
-        
-        // After a short delay, collapse to "Thought for X seconds" style
-        setTimeout(() => {
-            const thinkingHeader = thinkingDiv.querySelector('.thinking-header');
-            const thinkingContent = thinkingDiv.querySelector('.thinking-text');
-            
-            thinkingHeader.innerHTML = `
-                <span class="thinking-label collapsed" onclick="toggleThinking(this)">
-                    <i class="bi bi-chevron-right"></i>
-                    Thought for a few seconds
-                </span>
-            `;
-            thinkingHeader.style.cursor = 'pointer';
-            
-            // Add click handler to toggle thinking visibility
-            thinkingHeader.onclick = () => {
-                const icon = thinkingHeader.querySelector('i');
-                if (thinkingContent.style.display === 'none') {
-                    thinkingContent.style.display = 'block';
-                    icon.className = 'bi bi-chevron-down';
-                } else {
-                    thinkingContent.style.display = 'none';
-                    icon.className = 'bi bi-chevron-right';
-                }
-            };
-        }, 2000);
-    }
-
-    addMessageToUI(role, content, thinkingProcess = null) {
+    addMessageToUI(role, content) {
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${role}-message`;
         
