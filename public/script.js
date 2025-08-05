@@ -104,60 +104,129 @@ class OnlineCareChat {
         this.messageInput.value = '';
         this.messageInput.disabled = true;
 
-        // Show typing indicator
-        const typingIndicator = this.showTypingIndicator();
+        // Create AI message element for streaming
+        const aiMessageElement = this.createStreamingMessageElement();
 
         try {
-            const response = await fetch('/api/chat/send', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
-                },
-                body: JSON.stringify({
-                    message: message,
-                    temperature: this.temperature,
-                    conversation_history: this.conversationHistory
-                })
-            });
+            // Use EventSource for Server-Sent Events (streaming)
+            const eventSource = new EventSource('/api/chat/send-stream?' + new URLSearchParams({
+                message: message,
+                temperature: this.temperature,
+                conversation_history: JSON.stringify(this.conversationHistory),
+                _token: document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+            }));
 
-            const data = await response.json();
+            let aiResponse = '';
 
-            if (data.success) {
-                // Add user message to history
-                this.conversationHistory.push({
-                    role: 'user',
-                    content: message
-                });
+            eventSource.onmessage = (event) => {
+                try {
+                    if (event.data === '[DONE]') {
+                        // Stream finished
+                        eventSource.close();
+                        
+                        // Add to conversation history
+                        this.conversationHistory.push({
+                            role: 'user',
+                            content: message
+                        });
 
-                // Add AI response to history
-                this.conversationHistory.push({
-                    role: 'assistant',
-                    content: data.response
-                });
+                        this.conversationHistory.push({
+                            role: 'assistant',
+                            content: aiResponse
+                        });
 
-                // Remove typing indicator
-                typingIndicator.remove();
+                        this.isLoading = false;
+                        this.messageInput.disabled = false;
+                        this.messageInput.focus();
+                        return;
+                    }
 
-                // Add AI response to UI
-                this.addMessageToUI('assistant', data.response);
-
-                // Show token usage if available
-                if (data.tokens_used) {
-                    console.log('Tokens used:', data.tokens_used);
+                    const data = JSON.parse(event.data);
+                    if (data.content) {
+                        aiResponse += data.content;
+                        this.updateStreamingMessage(aiMessageElement, aiResponse);
+                    }
+                } catch (error) {
+                    console.error('Error parsing streaming data:', error);
                 }
-            } else {
-                typingIndicator.remove();
-                this.addMessageToUI('error', `Error: ${data.error}`);
-            }
+            };
+
+            eventSource.onerror = (error) => {
+                console.error('EventSource failed:', error);
+                
+                // Check if we got some response before the error
+                if (aiResponse.length > 0) {
+                    // We got partial response, treat as success
+                    eventSource.close();
+                    
+                    // Add to conversation history
+                    this.conversationHistory.push({
+                        role: 'user',
+                        content: message
+                    });
+
+                    this.conversationHistory.push({
+                        role: 'assistant',
+                        content: aiResponse
+                    });
+
+                    this.isLoading = false;
+                    this.messageInput.disabled = false;
+                    this.messageInput.focus();
+                } else {
+                    // No response received, show error
+                    eventSource.close();
+                    this.updateStreamingMessage(aiMessageElement, 'Sorry, there was an error with the streaming connection. Please try again.');
+                    
+                    this.isLoading = false;
+                    this.messageInput.disabled = false;
+                    this.messageInput.focus();
+                }
+            };
+
         } catch (error) {
-            typingIndicator.remove();
-            this.addMessageToUI('error', 'Failed to connect to the AI model. Please check if LM Studio is running.');
-        } finally {
+            console.error('Failed to start streaming:', error);
+            this.updateStreamingMessage(aiMessageElement, 'Sorry, there was an error connecting to the AI model. Please try again.');
+            
             this.isLoading = false;
             this.messageInput.disabled = false;
             this.messageInput.focus();
         }
+    }
+
+    createStreamingMessageElement() {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message assistant-message';
+        
+        const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        
+        messageDiv.innerHTML = `
+            <div class="message-avatar ai-avatar">
+                <span>AI</span>
+            </div>
+            <div class="message-content ai-content">
+                <div class="message-text streaming-text"></div>
+                <div class="message-time">${timestamp}</div>
+                <div class="message-actions">
+                    <button class="btn btn-sm btn-outline-secondary" onclick="copyToClipboard(this)" data-content="">
+                        <i class="bi bi-copy"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        this.messagesList.appendChild(messageDiv);
+        this.scrollToBottom();
+        return messageDiv;
+    }
+
+    updateStreamingMessage(messageElement, content) {
+        const textElement = messageElement.querySelector('.streaming-text');
+        const copyButton = messageElement.querySelector('[data-content]');
+        
+        textElement.innerHTML = this.formatMessage(content) + '<span class="streaming-cursor">▊</span>';
+        copyButton.setAttribute('data-content', content.replace(/"/g, '&quot;'));
+        this.scrollToBottom();
     }
 
     addMessageToUI(role, content) {

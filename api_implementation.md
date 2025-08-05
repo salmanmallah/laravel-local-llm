@@ -50,9 +50,9 @@ This document provides comprehensive documentation for integrating LM Studio's l
 
 ### Server Configuration:
 ```
-IP Address: 192.168.100.2
+IP Address: 192.168.56.1
 Port: 1234
-Base URL: http://192.168.100.2:1234
+Base URL: http://192.168.56.1:1234
 API Endpoint: /v1/chat/completions
 Model Status: /v1/models
 ```

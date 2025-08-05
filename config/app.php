@@ -132,7 +132,7 @@ return [
     |
     */
 
-    'lm_studio_url' => env('LM_STUDIO_URL', 'http://192.168.100.2:1234'),
-    'lm_studio_model' => env('LM_STUDIO_MODEL', 'deepseek/deepseek-r1-0528-qwen3-8b'),
+    'lm_studio_url' => env('LM_STUDIO_URL', 'http://localhost:1234'),
+    'lm_studio_model' => env('LM_STUDIO_MODEL', 'qwen/qwen3-4b'),
 
 ];

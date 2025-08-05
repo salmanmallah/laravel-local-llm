@@ -365,3 +365,28 @@ html, body {
         opacity: 1;
     }
 }
+
+/* Streaming cursor animation */
+.streaming-cursor {
+    color: var(--orange-primary);
+    animation: blink 1s infinite;
+    font-weight: bold;
+}
+
+@keyframes blink {
+    0%, 50% {
+        opacity: 1;
+    }
+    51%, 100% {
+        opacity: 0;
+    }
+}
+
+/* Streaming text styling */
+.streaming-text {
+    line-height: 1.6;
+}
+
+.streaming-text p {
+    margin-bottom: 0.5rem;
+}
