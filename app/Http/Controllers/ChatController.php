@@ -34,27 +34,7 @@ class ChatController extends Controller
             $messages = [
                 [
                     'role' => 'system',
-                    'content' => 'You are Dr. OnlineCareAI, a qualified medical professional and healthcare consultant. You provide comprehensive medical consultations, symptom analysis, and treatment recommendations.
-
-MEDICAL CONSULTATION GUIDELINES:
-- Analyze symptoms thoroughly and suggest possible medical conditions
-- Recommend specific medications with proper dosages when appropriate  
-- Provide detailed treatment plans including home remedies and lifestyle changes
-- Suggest diagnostic tests or procedures if needed
-- Give specific medical advice based on symptoms described
-- Include warning signs that require immediate medical attention
-- Provide follow-up care instructions and monitoring advice
-- Offer preventive healthcare recommendations
-
-RESPONSE FORMAT:
-1. Symptom Analysis: [Analyze the presented symptoms]
-2. Possible Conditions: [List potential medical conditions]
-3. Recommended Treatment: [Specific medications, dosages, and treatment approach]
-4. Home Care: [Self-care measures and home remedies]
-5. When to Seek Emergency Care: [Warning signs requiring immediate attention]
-6. Follow-up: [Monitoring advice and next steps]
-
-Provide detailed, specific, and medically accurate consultations as an experienced healthcare professional would.'
+                    'content' => "You are a helpful AI assistant. Respond directly and naturally to user questions. Provide clear, accurate, and helpful answers without using thinking tags or internal reasoning. Just give direct responses."
                 ]
             ];
 
@@ -72,12 +52,12 @@ Provide detailed, specific, and medically accurate consultations as an experienc
                 'content' => $message
             ];
 
-            // Send request to LM Studio with streaming enabled
-            $response = Http::timeout(30)->post($this->lmStudioUrl, [
+            // Send request to LM Studio with extended timeout for slow systems
+            $response = Http::timeout(180)->post($this->lmStudioUrl, [
                 'model' => $this->modelName,
                 'messages' => $messages,
                 'temperature' => $temperature,
-                'max_tokens' => -1,
+                'max_tokens' => 500,
                 'stream' => false  // Keep false for non-streaming endpoint
             ]);
 
@@ -136,27 +116,28 @@ Provide detailed, specific, and medically accurate consultations as an experienc
             $messages = [
                 [
                     'role' => 'system',
-                    'content' => 'You are Dr. OnlineCareAI, a qualified medical professional and healthcare consultant. You provide comprehensive medical consultations, symptom analysis, and treatment recommendations.
+//                     'content' => 'You are Dr. OnlineCareAI, a qualified medical professional and healthcare consultant. You provide comprehensive medical consultations, symptom analysis, and treatment recommendations.
 
-MEDICAL CONSULTATION GUIDELINES:
-- Analyze symptoms thoroughly and suggest possible medical conditions
-- Recommend specific medications with proper dosages when appropriate  
-- Provide detailed treatment plans including home remedies and lifestyle changes
-- Suggest diagnostic tests or procedures if needed
-- Give specific medical advice based on symptoms described
-- Include warning signs that require immediate medical attention
-- Provide follow-up care instructions and monitoring advice
-- Offer preventive healthcare recommendations
+// MEDICAL CONSULTATION GUIDELINES:
+// - Analyze symptoms thoroughly and suggest possible medical conditions
+// - Recommend specific medications with proper dosages when appropriate  
+// - Provide detailed treatment plans including home remedies and lifestyle changes
+// - Suggest diagnostic tests or procedures if needed
+// - Give specific medical advice based on symptoms described
+// - Include warning signs that require immediate medical attention
+// - Provide follow-up care instructions and monitoring advice
+// - Offer preventive healthcare recommendations
 
-RESPONSE FORMAT:
-1. Symptom Analysis: [Analyze the presented symptoms]
-2. Possible Conditions: [List potential medical conditions]
-3. Recommended Treatment: [Specific medications, dosages, and treatment approach]
-4. Home Care: [Self-care measures and home remedies]
-5. When to Seek Emergency Care: [Warning signs requiring immediate attention]
-6. Follow-up: [Monitoring advice and next steps]
+// RESPONSE FORMAT:
+// 1. Symptom Analysis: [Analyze the presented symptoms]
+// 2. Possible Conditions: [List potential medical conditions]
+// 3. Recommended Treatment: [Specific medications, dosages, and treatment approach]
+// 4. Home Care: [Self-care measures and home remedies]
+// 5. When to Seek Emergency Care: [Warning signs requiring immediate attention]
+// 6. Follow-up: [Monitoring advice and next steps]
 
-Provide detailed, specific, and medically accurate consultations as an experienced healthcare professional would.'
+// Provide detailed, specific, and medically accurate consultations as an experienced healthcare professional would.'
+                    'content' => "You are a helpful AI assistant. Respond directly and naturally to user questions. Provide clear, accurate, and helpful answers without using thinking tags or internal reasoning. Just give direct responses."
                 ]
             ];
 
@@ -183,13 +164,13 @@ Provide detailed, specific, and medically accurate consultations as an experienc
                 header('Connection: keep-alive');
                 header('X-Accel-Buffering: no');
                 
-                // First try LM Studio with a short timeout
+                // Try LM Studio with extended timeout for slow systems
                 $data = [
                     'model' => $this->modelName,
                     'messages' => $messages,
                     'temperature' => (float)$temperature,
-                    'max_tokens' => 200,
-                    'stream' => false
+                    'max_tokens' => 500,
+                    'stream' => true // Enable streaming from LM Studio
                 ];
 
                 $ch = curl_init();
@@ -198,85 +179,60 @@ Provide detailed, specific, and medically accurate consultations as an experienc
                 curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
                 curl_setopt($ch, CURLOPT_HTTPHEADER, [
                     'Content-Type: application/json',
-                    'Accept: application/json'
+                    'Accept: text/event-stream'
                 ]);
-                curl_setopt($ch, CURLOPT_TIMEOUT, 10); // Short timeout
-                curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
-                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 300); // 5 minutes for slow systems
+                curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 30); // 30 seconds connection timeout
+                
+                // Real streaming from LM Studio
+                curl_setopt($ch, CURLOPT_WRITEFUNCTION, function($ch, $chunk) {
+                    if (empty($chunk)) return 0;
+                    
+                    $lines = explode("\n", $chunk);
+                    foreach ($lines as $line) {
+                        $line = trim($line);
+                        if (strpos($line, 'data: ') === 0) {
+                            $jsonData = substr($line, 6);
+                            
+                            if ($jsonData === '[DONE]') {
+                                echo "data: [DONE]\n\n";
+                                if (ob_get_level()) ob_flush();
+                                flush();
+                                return 0; // End streaming
+                            }
+                            
+                            $decoded = json_decode($jsonData, true);
+                            if ($decoded && isset($decoded['choices'][0]['delta']['content'])) {
+                                $content = $decoded['choices'][0]['delta']['content'];
+                                echo "data: " . json_encode(['content' => $content]) . "\n\n";
+                                if (ob_get_level()) ob_flush();
+                                flush();
+                            } elseif ($decoded && isset($decoded['choices'][0]['finish_reason'])) {
+                                echo "data: [DONE]\n\n";
+                                if (ob_get_level()) ob_flush();
+                                flush();
+                                return 0; // End streaming
+                            }
+                        }
+                    }
+                    return strlen($chunk);
+                });
+                
+                echo "data: " . json_encode(['content' => 'Connecting to LM Studio... Please wait for slow system loading...']) . "\n\n";
+                if (ob_get_level()) ob_flush();
+                flush();
                 
                 $result = curl_exec($ch);
-                $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
                 $error = curl_error($ch);
                 curl_close($ch);
                 
-                $content = '';
-                
-                if ($error || $httpCode !== 200) {
-                    // Medical consultation fallback response
-                    $userMessage = end($messages)['content'] ?? 'general consultation';
-                    
-                    // Create a proper medical response based on the user's message
-                    if (stripos($userMessage, 'fever') !== false || stripos($userMessage, 'temperature') !== false) {
-                        $content = "**Medical Consultation for Fever/Temperature**
-
-1. **Symptom Analysis**: Based on your fever symptoms, this could indicate a viral or bacterial infection.
-
-2. **Possible Conditions**: Common cold, flu, viral infection, or bacterial infection.
-
-3. **Recommended Treatment**: 
-   - Paracetamol 500mg every 6-8 hours (max 4g/day)
-   - Ibuprofen 400mg every 8 hours if needed
-   - Stay hydrated with plenty of fluids
-
-4. **Home Care**: 
-   - Rest in bed
-   - Lukewarm water sponging
-   - Light, easily digestible food
-   - Monitor temperature regularly
-
-5. **Emergency Care**: Seek immediate medical attention if temperature exceeds 103°F (39.4°C), difficulty breathing, persistent vomiting, or severe headache.
-
-6. **Follow-up**: If fever persists for more than 3 days or worsens, consult a healthcare provider for further evaluation.";
-                    } else {
-                        $content = "**Dr. OnlineCareAI - Medical Consultation**
-
-Thank you for reaching out regarding: '$userMessage'
-
-1. **Initial Assessment**: I understand your health concern. To provide the most accurate medical consultation, please describe your symptoms in detail including:
-   - Duration of symptoms
-   - Severity (mild/moderate/severe)
-   - Any associated symptoms
-   - Your age and general health status
-
-2. **General Recommendations**: 
-   - Monitor your symptoms closely
-   - Stay hydrated
-   - Get adequate rest
-   - Note any changes in your condition
-
-3. **When to Seek Care**: Contact emergency services if you experience severe symptoms, difficulty breathing, chest pain, or any life-threatening conditions.
-
-Please provide more specific details about your symptoms for a detailed medical consultation and treatment recommendations.";
-                    }
-                } else {
-                    $response = json_decode($result, true);
-                    if ($response && isset($response['choices'][0]['message']['content'])) {
-                        $content = $response['choices'][0]['message']['content'];
-                    } else {
-                        $content = "I'm having trouble generating a response right now. Please try again.";
-                    }
-                }
-                
-                // Simulate streaming by sending word by word
-                $words = explode(' ', $content);
-                foreach ($words as $index => $word) {
-                    echo "data: " . json_encode(['content' => $word . ($index < count($words) - 1 ? ' ' : '')]) . "\n\n";
+                if ($error) {
+                    echo "data: " . json_encode(['content' => "Connection Error: $error. Please ensure LM Studio is running and model is loaded."]) . "\n\n";
                     if (ob_get_level()) ob_flush();
                     flush();
-                    usleep(150000); // 0.15 second delay between words for realistic effect
                 }
                 
-                // Send final DONE
+                // Always send final DONE
                 echo "data: [DONE]\n\n";
                 if (ob_get_level()) ob_flush();
                 flush();
